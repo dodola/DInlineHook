@@ -1,0 +1,47 @@
+apply plugin: 'com.android.library'
+
+android {
+    compileSdkVersion 26
+    buildToolsVersion "26.0.2"
+
+
+    defaultConfig {
+        minSdkVersion 15
+        targetSdkVersion 22
+        versionCode 1
+        versionName "1.0"
+        externalNativeBuild {
+            cmake {
+                cppFlags "-fexceptions"
+                abiFilters "armeabi-v7a"
+//                targets "dodo"
+            }
+//            ndkBuild {
+//                abiFilters "armeabi-v7a"//由于是在 ARM 环境下，所以此处需要限定环境
+//            }
+        }
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+//            path 'src/main/cpp/zstd/build/cmake/CMakeLists.txt'
+
+        }
+//        ndkBuild {
+//            path 'src/main/cpp/Android.mk'//此处需要指向 Android.mk 文件
+//        }
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+}

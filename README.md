@@ -1,2 +1,0 @@
-# HookTest
-frida hook test
