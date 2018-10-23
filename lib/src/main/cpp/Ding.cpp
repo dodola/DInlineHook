@@ -7,10 +7,15 @@
 #include <fb/ALog.h>
 #include <fb/fbjni.h>
 #include <unistd.h>
-#include <stdarg.h>
-#include <HookZz/include/hookzz.h>
 #include <sys/mman.h>
+#include <dlfcn.h>
 
+extern "C" {
+#include <stdint.h>
+}
+
+#include <cstdio>
+#include <string>
 
 using namespace facebook::jni;
 using namespace facebook::alog;
@@ -25,90 +30,7 @@ typedef unsigned long guint64;
 typedef unsigned int gsize;
 typedef void *gpointer;
 typedef guint64 GumAddress;
-enum Register {
-    R0 = 0,
-    R1 = 1,
-    R2 = 2,
-    R3 = 3,
-    R4 = 4,
-    R5 = 5,
-    R6 = 6,
-    R7 = 7,
-    R8 = 8,
-    R9 = 9,
-    R10 = 10,
-    R11 = 11,
-    R12 = 12,
-    R13 = 13,
-    R14 = 14,
-    R15 = 15,
-    TR = 9,  // thread register
-    FP = 11,
-    IP = 12,
-    SP = 13,
-    LR = 14,
-    PC = 15,
-    kNumberOfCoreRegisters = 16,
-    kNoRegister = -1,
-};
-enum {
-    H = 1 << 5,
-    L = 1 << 20,
-    S = 1 << 20,
-    W = 1 << 21,
-    A = 1 << 21,
-    B = 1 << 22,
-    N = 1 << 22,
-    U = 1 << 23,
-    P = 1 << 24,
-    I = 1 << 25,
 
-    B0 = 1,
-    B1 = 1 << 1,
-    B2 = 1 << 2,
-    B3 = 1 << 3,
-    B4 = 1 << 4,
-    B5 = 1 << 5,
-    B6 = 1 << 6,
-    B7 = 1 << 7,
-    B8 = 1 << 8,
-    B9 = 1 << 9,
-    B10 = 1 << 10,
-    B11 = 1 << 11,
-    B12 = 1 << 12,
-    B13 = 1 << 13,
-    B14 = 1 << 14,
-    B15 = 1 << 15,
-    B16 = 1 << 16,
-    B17 = 1 << 17,
-    B18 = 1 << 18,
-    B19 = 1 << 19,
-    B20 = 1 << 20,
-    B21 = 1 << 21,
-    B22 = 1 << 22,
-    B23 = 1 << 23,
-    B24 = 1 << 24,
-    B25 = 1 << 25,
-    B26 = 1 << 26,
-    B27 = 1 << 27,
-    B28 = 1 << 28,
-    B29 = 1 << 29,
-    B30 = 1 << 30,
-    B31 = 1 << 31,
-
-    RdMask = 15 << 12,
-    CondMask = 15 << 28,
-    CoprocessorMask = 15 << 8,
-    OpCodeMask = 15 << 21,
-    Imm24Mask = (1 << 24) - 1,
-    Off12Mask = (1 << 12) - 1,
-
-    kLdExRnShift = 16,
-    kLdExRtShift = 12,
-    kStrExRnShift = 16,
-    kStrExRdShift = 12,
-    kStrExRtShift = 0,
-};
 
 int kAccPublic = 0x0001;
 int kAccStatic = 0x0008;
@@ -116,36 +38,8 @@ int kAccFinal = 0x0010;
 int kAccNative = 0x0100;
 int kAccFastNative = 0x00080000;
 
-extern "C" jobject hookMe(JNIEnv *env, jobject objOrClass, ...);
-
-extern "C" {
-#include "HookZz/include/hookzz.h"
-}
-
 
 alias_ref<jclass> nativeEngineClass;
-
-static void jni_nativeEnableIOProfiler(alias_ref<jclass>, jint apiLevel,
-                                       jint preview_api_level) {
-    IOHooker::startHook(apiLevel, preview_api_level);
-}
-
-static void jni_startIOProfiler(alias_ref<jclass>) {
-    IOHooker::startProfiler();
-}
-
-static void jni_stopIOProfiler(alias_ref<jclass>, jstring filePath) {
-    IOHooker::stopProfiler(filePath);
-}
-
-void hook_post_call(RegState *rs, ThreadStack *threadstack, CallStack *callstack, const HookEntryInfo *info) {
-    loge("hookzz", "=========postcall============%x", info->hook_address);
-}
-
-void hook_pre_call(RegState *rs, ThreadStack *threadstack, CallStack *callstack, const HookEntryInfo *info) {
-    loge("hookzz", "=========hook_pre_call============%s", rs->general.regs.r0);
-
-}
 
 
 struct _GumMemoryRange {
@@ -245,122 +139,6 @@ struct ClassLinkerOffset {
  */
 
 
-uint32_t movw(Register rd, uint16_t imm16) {
-    uint32_t imm4 = (imm16 >> 12) & 15U /* 0b1111 */;
-    uint32_t i = (imm16 >> 11) & 1U /* 0b1 */;
-    uint32_t imm3 = (imm16 >> 8) & 7U /* 0b111 */;
-    uint32_t imm8 = imm16 & 0xff;
-    uint32_t encoding = B31 | B30 | B29 | B28 |
-                        B25 | B22 |
-                        static_cast<uint32_t>(rd) << 8 |
-                        i << 26 |
-                        imm4 << 16 |
-                        imm3 << 12 |
-                        imm8;
-    return encoding;
-}
-
-uint32_t movt(Register rd, uint16_t imm16) {
-    uint32_t imm4 = (imm16 >> 12) & 15U /* 0b1111 */;
-    uint32_t i = (imm16 >> 11) & 1U /* 0b1 */;
-    uint32_t imm3 = (imm16 >> 8) & 7U /* 0b111 */;
-    uint32_t imm8 = imm16 & 0xff;
-    uint32_t encoding = B31 | B30 | B29 | B28 |
-                        B25 | B23 | B22 |
-                        static_cast<uint32_t>(rd) << 8 |
-                        i << 26 |
-                        imm4 << 16 |
-                        imm3 << 12 |
-                        imm8;
-    return encoding;
-}
-
-inline int16_t ldr(Register rt, int32_t offset) {
-    return B14 | B11 | (static_cast<int32_t>(rt) << 8) | (offset >> 2);
-}
-
-inline int16_t blx(Register rm) {
-    int16_t encoding = B14 | B10 | B9 | B8 | B7 | static_cast<int16_t>(rm) << 3;
-    return encoding;
-}
-
-static int32_t arm_thumb_blx(int32_t immediate) {
-    // The value doesn't encode the low two bits (always zero) and is offset by
-    // four (see fixup_arm_thumb_cp). The 32-bit immediate value is encoded as
-    //   imm32 = SignExtend(S:I1:I2:imm10H:imm10L:00)
-    // where I1 = NOT(J1 ^ S) and I2 = NOT(J2 ^ S).
-    // The value is encoded into disjoint bit positions in the destination
-    // opcode. x = unchanged, I = immediate value bit, S = sign extension bit,
-    // J = either J1 or J2 bit, 0 = zero.
-    //
-    //   BLX: xxxxxSIIIIIIIIII xxJxJIIIIIIIIII0
-    //
-    // Note that the halfwords are stored high first, low second; so we need
-    // to transpose the fixup value here to map properly.
-    uint32_t offset = (immediate - 2) >> 2;
-    uint32_t signBit = (offset & 0x400000) >> 22;
-    uint32_t I1Bit = (offset & 0x200000) >> 21;
-    uint32_t J1Bit = (I1Bit ^ 0x1) ^signBit;
-    uint32_t I2Bit = (offset & 0x100000) >> 20;
-    uint32_t J2Bit = (I2Bit ^ 0x1) ^signBit;
-    uint32_t imm10HBits = (offset & 0xFFC00) >> 10;
-    uint32_t imm10LBits = (offset & 0x3FF);
-
-    uint32_t Binary = 0;
-    uint32_t firstHalf = (((uint16_t) signBit << 10) | (uint16_t) imm10HBits);
-    uint32_t secondHalf = (((uint16_t) J1Bit << 13) | ((uint16_t) J2Bit << 11) | ((uint16_t) imm10LBits) << 1);
-    Binary |= secondHalf;
-    Binary |= firstHalf << 16;
-    Binary |= 0xF000C000;
-
-    uint32_t Byte0 = (Binary & 0xFF000000) >> 8;
-    uint32_t Byte1 = (Binary & 0x00FF0000) << 8;
-    uint32_t Byte2 = (Binary & 0x0000FF00) >> 8;
-    uint32_t Byte3 = (Binary & 0x000000FF) << 8;
-
-    Binary = Byte0 | Byte1 | Byte2 | Byte3;
-    return Binary;
-}
-
-/**
- * 错误的算法
- * @param dstAddr
- * @param srcAddr
- * @return
- */
-uint32_t blx(uint32_t dstAddr, uint32_t srcAddr) {
-    uint32_t offset = dstAddr - srcAddr;
-
-    offset = (offset - 4) & 0x007fffff;
-
-
-    uint32_t high = offset >> 12;
-
-    uint32_t low = (offset & 0x00000fff) >> 1;
-
-
-    if (low % 2 != 0) {
-
-        low++;
-
-    }
-
-
-    uint32_t machineCode = ((0xEF00 | low) << 16) | (0xF000 | high);
-    return machineCode;
-}
-
-uint32_t blx2(uint32_t dstAddr, uint32_t srcAddr) {
-    uint32_t offset = dstAddr - srcAddr;
-
-    offset = (offset - 4) & 0x007fffff;
-
-    uint32_t high = offset >> 12;
-    uint32_t low = (offset & 0x00000fff) >> 1;
-
-    uint32_t machineCode = ((0xFF00 | low) << 16) | (0xF000 | high);
-    return machineCode;
-}
 
 size_t *jnitrampolineAddress;
 
@@ -401,7 +179,8 @@ void hooktest() {
                 runtimeOffset.heapOffset = heapOffset;
                 runtimeOffset.internTable = internTableOffset;
                 runtimeOffset.threadList = threadListOffset;
-                loge("dododola", "classLinker:%zu  heapOffset:%zu internTable:%zu threadList:%zu", classLinkerOffset,
+                loge("dododola", "classLinker:%zu  heapOffset:%zu internTable:%zu threadList:%zu",
+                     classLinkerOffset,
                      heapOffset, internTableOffset, threadListOffset);
 
 
@@ -428,7 +207,8 @@ void hooktest() {
             if (*value == *internTableAddress) {
                 classLinkerOffset.quick_resolution_trampoline_ = offset + (pointerSize);
                 classLinkerOffset.quick_generic_jni_trampoline_ = offset + (3 * pointerSize);
-                classLinkerOffset.quick_to_interpreter_bridge_trampoline_ = offset + (4 * pointerSize);
+                classLinkerOffset.quick_to_interpreter_bridge_trampoline_ =
+                        offset + (4 * pointerSize);
                 break;
             }
         }
@@ -444,15 +224,9 @@ void hooktest() {
     void *handle = dlopen("libart.so", RTLD_LAZY | RTLD_GLOBAL);
     artInterpreterToCompiledCodeBridge = dlsym(handle,
                                                "artInterpreterToCompiledCodeBridge");
-//    ZzHookPrePost((zpointer) *jnitrampoline, hook_pre_call, nullptr);
     loge("dodola", "runtimeAddress:%zu classLinker:%zu", *classLinkerAddress, *jnitrampoline);
 }
 
-jobject executeOrigin(JNIEnv *env, jobject objOrClass, size_t address) {
-
-    //此处调用原来的
-    return 0;
-}
 
 extern "C" void preCall() {
     loge("preCall", "cccccccccccccc");
@@ -464,13 +238,7 @@ extern "C" void postCall() {
 
 
 extern "C" jobject JNICALL hookMethod(JNIEnv *env, jobject objOrClass, ...) {
-
-//    int addressOrigin = 0x5678;
-
     preCall();
-//    jobject result = executeOrigin(env, objOrClass, addressOrigin);
-//    postCall();
-
     return env->NewStringUTF("olalalalal");
 }
 
@@ -485,7 +253,7 @@ ArtMethodSpec getArtMethodSpec() {
     size_t jniCodeOffset = NULL;
     size_t accessFlagsOffset = NULL;
     uint32_t expectedAccessFlags = kAccPublic | kAccStatic | kAccFinal | kAccNative;
-    size_t entrypointFieldSize = 4;
+    size_t entrypointFieldSize = 4;//apiLevel<=21 ?8 :4
 
     runtime_bounds.start = NULL;
     runtime_bounds.end = NULL;
@@ -510,13 +278,13 @@ ArtMethodSpec getArtMethodSpec() {
             loge("TAG", "============found %s", buff);
             int n = sscanf(buff,
                            "%"
-                                   G_GINT64_MODIFIER
-                                   "x-%"
-                                   G_GINT64_MODIFIER
-                                   "x "
-                                   "%4c "
-                                   "%*x %*s %*d "
-                                   "%s",
+                           G_GINT64_MODIFIER
+                           "x-%"
+                           G_GINT64_MODIFIER
+                           "x "
+                           "%4c "
+                           "%*x %*s %*d "
+                           "%s",
                            &range.base_address, &end,
                            perms,
                            path);
@@ -549,6 +317,7 @@ ArtMethodSpec getArtMethodSpec() {
             }
         }
     }
+    loge("TAG", "============make spec =========");
     size_t quickCodeOffset = (size_t) (jniCodeOffset + entrypointFieldSize);
     size_t size = quickCodeOffset + 4;
     ArtMethodSpec spec;
@@ -557,55 +326,119 @@ ArtMethodSpec getArtMethodSpec() {
     spec.quickCode = quickCodeOffset;
     spec.size = size;
     spec.interpreterCode = jniCodeOffset - entrypointFieldSize;
+    loge("TAG", "============make spec end =========");
+
     return spec;
 }
 
 
 void jni_testMethod(alias_ref<jclass>, jlong methodAddress, jint flags) {
-    loge("dodola", "***********************");
+
     //判断是thumb还是art
     uint32_t hookMethodAddress = ((uint32_t) hookMethod);
     int runtimeType = hookMethodAddress & 1;
     loge("dodola", "=======  %s", runtimeType == 1 ? "thumb" : "art");
     ArtMethodSpec spec = getArtMethodSpec();
-//    *((size_t *) (methodAddress + spec.jniCode)) = (size_t) getJumpPoint(methodAddress, (size_t) preCall,
-//                                                                         (size_t) postCall,
-//                                                                         (size_t) executeOrigin) + runtimeType ==
-//                                                   1 ? 1 : 0;
-//    ZzHookPrePost((void *) hookMethod, hook_pre_call, hook_post_call);
-
     *((size_t *) (methodAddress + spec.jniCode)) = (size_t) hookMethod;
+    loge("dodola", "***********************begin*********************");
+
     *((int *) (methodAddress + spec.accessFlags)) = kAccNative | kAccFastNative | flags;
+
     *((size_t *) (methodAddress + spec.quickCode)) = *jnitrampolineAddress;
-    *((size_t *) (methodAddress + spec.interpreterCode)) = (size_t) artInterpreterToCompiledCodeBridge;
+    *((size_t *) (methodAddress +
+                  spec.interpreterCode)) = (size_t) artInterpreterToCompiledCodeBridge;
+
+    loge("dodola", "**********************end**********************");
 
 }
 
-void jni_testMethod2(alias_ref<jclass>, jlong entryPointFromQuickCompiledCode) {
-    ZzHookPrePost((void *) entryPointFromQuickCompiledCode, hook_pre_call, hook_post_call);
-//    void *p = (void *) entryPointFromQuickCompiledCode;
-//    ZzHookReplace((void *) entryPointFromQuickCompiledCode, (void *) hookMethod, nullptr);
+#define __ masm->
+
+void GenerateDemo(MacroAssembler *masm) {
+    // uint32_t demo(uint32_t x)
+    // Load a constant in r1 using the literal pool.
+    __ Ldr(r1, 0x12345678);
+    __ And(r0, r0, r1);
+    __ Bx(lr);
 }
 
+void testVixl() {
+    loge("dodola", "===============testVixl===========");
+
+    MacroAssembler masm;
+    // Generate the code for the example function.
+    Label demo;
+    // Tell the macro assembler that the label "demo" refer to the current
+    // location in the buffer.
+    masm.Bind(&demo);
+    GenerateDemo(&masm);
+    // Ensure that everything is generated and that the generated buffer is
+    // ready to use.
+    masm.FinalizeCode();
+    byte *code = masm.GetBuffer()->GetStartAddress<byte *>();
+    uint32_t code_size = masm.GetSizeOfCodeGenerated();
+    ExecutableMemory memory(code, code_size);
+    // Run the example function.
+    uint32_t (*demo_function)(uint32_t) = memory.GetEntryPoint<uint32_t (*)(
+            uint32_t)>(demo, masm.GetInstructionSetInUse());
+    uint32_t input_value = 0x89abcdef;
+    uint32_t output_value = (*demo_function)(input_value);
+    loge("dodola", "native: demo(0x%08x) = 0x%08x\n", input_value, output_value);
+}
+
+jlong jni_getMethodAddress(alias_ref<jclass>, jobject method) {
+    JNIEnv *env = Environment::current();
+
+    jlong art_method = (jlong) env->FromReflectedMethod(method);
+    return art_method;
+}
+
+void jni_memput(alias_ref<jclass>, jbyteArray src, jlong dest) {
+    JNIEnv *env = Environment::current();
+
+    jbyte *srcPnt = env->GetByteArrayElements(src, 0);
+    jsize length = env->GetArrayLength(src);
+    unsigned char *destPnt = (unsigned char *) dest;
+    for (int i = 0; i < length; ++i) {
+        // LOGV("put %d with %d", i, *(srcPnt + i));
+        destPnt[i] = (unsigned char) srcPnt[i];
+    }
+    env->ReleaseByteArrayElements(src, srcPnt, 0);
+}
+
+jbyteArray jni_memget(alias_ref<jclass>, jlong src, jint length) {
+    JNIEnv *env = Environment::current();
+
+    jbyteArray dest = env->NewByteArray(length);
+    if (dest == NULL) {
+        return NULL;
+    }
+    unsigned char *destPnt = (unsigned char *) env->GetByteArrayElements(dest, 0);
+    unsigned char *srcPnt = (unsigned char *) src;
+    for (int i = 0; i < length; ++i) {
+        destPnt[i] = srcPnt[i];
+    }
+    env->ReleaseByteArrayElements(dest, (jbyte *) destPnt, 0);
+
+    return dest;
+}
 
 jint JNICALL JNI_OnLoad(JavaVM *vm, void *) {
     return initialize(vm, [] {
 
         loge("dodola", "===============hook JNI_OnLoad===========");
-        nativeEngineClass = findClassStatic("profiler/dodola/lib/Profiler");
+        nativeEngineClass = findClassStatic(
+                "profiler/dodola/lib/InnerHooker");
         nativeEngineClass->registerNatives({
-                                                   makeNativeMethod("nativeEnableIOProfiler",
-                                                                    jni_nativeEnableIOProfiler),
-                                                   makeNativeMethod("startIOProfiler",
-                                                                    jni_startIOProfiler),
-                                                   makeNativeMethod("stopIOProfiler",
-                                                                    jni_stopIOProfiler),
                                                    makeNativeMethod("testMethod", jni_testMethod),
-                                                   makeNativeMethod("testMethod2", jni_testMethod2),
-
+                                                   makeNativeMethod("memput", jni_memput),
+                                                   makeNativeMethod("memget", jni_memget),
+                                                   makeNativeMethod("getMethodAddress",
+                                                                    jni_getMethodAddress)
                                            });
-
         hooktest();
-
+//        testVixl();
     });
 }
+
+

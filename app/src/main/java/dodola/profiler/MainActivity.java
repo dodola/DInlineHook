@@ -5,33 +5,20 @@ import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Process;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
-import android.widget.Toast;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.StringReader;
-
-import me.weishu.epic.art.method.ArtMethod;
-import profiler.dodola.lib.Profiler;
 
 public class MainActivity extends Activity implements View.OnClickListener {
 
-    //    static {
-    //        System.loadLibrary("native-lib");
-    //    }
 
     private ImageView iv;
 
@@ -44,43 +31,13 @@ public class MainActivity extends Activity implements View.OnClickListener {
         Button btn = findViewById(R.id.button);
         final TextView tv = findViewById(R.id.sample_text);
 
-        tv.setText(returnString("ccccx", "vvvvvvc"));
-
+//        tv.setText(returnString("ccccx", "vvvvvvc"));
+        tv.setText(returnString2());
         iv = findViewById(R.id.imageView);
         //        btn.setText(stringFromJNI());
 
         btn.setOnClickListener(this);
 
-        Handler handler = new Handler();
-        handler.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                //                String fileName = "/sdcard/" + System.currentTimeMillis() + ".txt";
-                //                Profiler.stopIOProfiler(fileName);
-
-                //                String fileName = "/proc/" + Process.myPid() + "/maps";
-                //                Toast.makeText(MainActivity.this, "保存成功:" + fileName, Toast.LENGTH_SHORT).show();
-                //
-                //                File file = new File(fileName);
-                //                try {
-                //                    FileInputStream fileInputStream = new FileInputStream(file);
-                //                    InputStreamReader streamReader = new InputStreamReader(fileInputStream);
-                //                    BufferedReader reader = new BufferedReader(streamReader);
-                //                    String line;
-                //                    StringBuilder stringBuilder = new StringBuilder();
-                //                    while ((line = reader.readLine()) != null) {
-                //                        stringBuilder.append(line);
-                //                        Log.d("FFFFF", line);
-                //                    }
-                //                    tv.setText(stringBuilder);
-                //                } catch (FileNotFoundException e) {
-                //                    e.printStackTrace();
-                //                } catch (IOException e) {
-                //                    e.printStackTrace();
-                //                }
-
-            }
-        }, 5000);
     }
 
     public static String returnString(String a, String b) {

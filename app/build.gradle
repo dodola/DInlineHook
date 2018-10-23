@@ -2,7 +2,6 @@ apply plugin: 'com.android.application'
 
 android {
     compileSdkVersion 26
-    buildToolsVersion "26.0.2"
     defaultConfig {
         applicationId "dodola.profiler"
         minSdkVersion 15
@@ -28,12 +27,9 @@ android {
     }
     externalNativeBuild {
         cmake {
-//            path "src/main/cpp/hook/CMakeLists.txt"
             path "CMakeLists.txt"
         }
-//        ndkBuild {
-//            path 'src/main/cpp/Android.mk'//此处需要指向 Android.mk 文件
-//        }
+
     }
 }
 
