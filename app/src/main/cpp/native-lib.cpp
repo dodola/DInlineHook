@@ -23,6 +23,14 @@ Java_dodola_profiler_MainActivity_stringFromJNI(
     return env->NewStringUTF("ddd");
 }
 
+jstring hooker(JNIEnv *env) {
+    return env->NewStringUTF("xxxxxxxxxxx");
+}
+
+jstring hooker2(JNIEnv *env) {
+    return hooker(env);
+}
+
 jint JNICALL JNI_OnLoad(JavaVM *vm, void *) {
     printf("cccccccccccccccccccc");
 //    addme((size_t) preCall, 2);

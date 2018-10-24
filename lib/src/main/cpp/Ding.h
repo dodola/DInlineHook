@@ -19,6 +19,7 @@ extern "C" {
 #include "aarch32/constants-aarch32.h"
 #include "aarch32/instructions-aarch32.h"
 #include "aarch32/macro-assembler-aarch32.h"
+#include "aarch32/disasm-aarch32.h"
 
 using namespace vixl;
 using namespace vixl::aarch32;
@@ -46,10 +47,10 @@ public:
                                                     0))) {
         VIXL_ASSERT(reinterpret_cast<intptr_t>(buffer_) != -1);
         memcpy(buffer_, code_start, size_);
-//        __builtin___clear_cache((char *)(buffer_), buffer_ + size_);
+        __builtin___clear_cache((char *) (buffer_), (char *) (buffer_ + size_));
     }
 
-    ~ExecutableMemory() { munmap(buffer_, size_); }
+//    ~ExecutableMemory() { munmap(buffer_, size_); }
 
     template<typename T>
     T GetEntryPoint(const Label &entry_point, InstructionSet isa) const {
@@ -73,5 +74,37 @@ private:
     byte *buffer_;
 };
 
+class androidbuf : public std::streambuf {
+public:
+    enum {
+        bufsize = 128
+    }; // ... or some other suitable buffer size
+    androidbuf() { this->setp(buffer, buffer + bufsize - 1); }
+
+private:
+    int overflow(int c) {
+        if (c == traits_type::eof()) {
+            *this->pptr() = traits_type::to_char_type(c);
+            this->sbumpc();
+        }
+        return this->sync() ? traits_type::eof() : traits_type::not_eof(c);
+    }
+
+    int sync() {
+        int rc = 0;
+        if (this->pbase() != this->pptr()) {
+            __android_log_print(ANDROID_LOG_ERROR,
+                                "Native",
+                                "%s",
+                                std::string(this->pbase(),
+                                            this->pptr() - this->pbase()).c_str());
+            rc = 0;
+            this->setp(buffer, buffer + bufsize - 1);
+        }
+        return rc;
+    }
+
+    char buffer[bufsize];
+};
 
 #endif //PROFILER_DING_H

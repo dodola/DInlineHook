@@ -19,7 +19,7 @@ public class InnerHooker {
 
     public static native long getMethodAddress(Object method);
 
-    public static native void testMethod(long address, int flags);
+    public static native void testMethod(Object method, int flags);
 
     public static void put(byte[] bytes, long dest) {
         memput(bytes, dest);

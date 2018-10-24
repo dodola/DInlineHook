@@ -16,6 +16,7 @@ extern "C" {
 
 #include <cstdio>
 #include <string>
+#include <iostream>
 
 using namespace facebook::jni;
 using namespace facebook::alog;
@@ -237,9 +238,15 @@ extern "C" void postCall() {
 }
 
 
-extern "C" jobject JNICALL hookMethod(JNIEnv *env, jobject objOrClass, ...) {
+extern "C" jobject JNICALL hookMethod(JNIEnv *env, jobject objOrClass, int test) {
     preCall();
-    return env->NewStringUTF("olalalalal");
+//    //调用原方法
+//    jlong art_method = (jlong) env->FromReflectedMethod(*method);
+//    jstring str = static_cast<jstring>(env->CallObjectMethod(objOrClass,
+//                                                             reinterpret_cast<jmethodID>(art_method)));
+    jstring str = env->NewStringUTF("==========");
+    loge("dodola", "getresultsssssss %d",test);
+    return str;
 }
 
 
@@ -332,14 +339,96 @@ ArtMethodSpec getArtMethodSpec() {
 }
 
 
-void jni_testMethod(alias_ref<jclass>, jlong methodAddress, jint flags) {
+#define __ masm->
+
+void GenerateDemo(MacroAssembler *masm) {
+    __ Ldr(r1, 1);
+    __ Add(r0, r0, r1);
+    __ Bx(lr);
+}
+
+
+void generatorJumpMethod(jobject *method, MacroAssembler *masm) {
+    loge("dodola", "hookMethod %x", (uint32_t) hookMethod);
+    //保存寄存器
+//    RegisterList registerList1(r1, r2, r3, r4);
+//    RegisterList registerList2(r5, r6, r7, r8);
+//    RegisterList registerList3(r10, r11, lr);
+//
+//    __ Push(registerList1);
+//    __ Push(registerList2);
+//    __ Push(registerList3);
+    __ Push(lr);
+
+    __ Mov(r2,100);
+    __ Mov(r3, (uint32_t) hookMethod);
+    __ Blx(r3);
+//    pop {r5-r8, r10-r11, lr}
+//    __ Pop(registerList3);
+//    __ Pop(registerList2);
+    __ Pop(lr);
+    __ Bx(lr);
+}
+
+uint32_t gens(jobject *method) {
+
+    MacroAssembler masm(A32);
+    Label demo;
+    masm.Bind(&demo);
+    generatorJumpMethod(method, &masm);
+    masm.FinalizeCode();
+
+    byte *code = masm.GetBuffer()->GetStartAddress<byte *>();
+    uint32_t code_size = masm.GetSizeOfCodeGenerated();
+    ExecutableMemory memory(code, code_size);
+    uint32_t
+    (*demo_function)(JNIEnv, jobject, ...) = memory.GetEntryPoint<uint32_t (*)(JNIEnv, jobject,
+                                                                               ...)>
+            (demo, masm.GetInstructionSetInUse());
+    return reinterpret_cast<uint32_t>(demo_function);
+//    uint32_t input_value = 0x1111;
+//    uint32_t output_value = (*demo_function)(input_value);
+//    loge("dodola", "native: demo(%d) = %d\n", input_value, output_value);
+}
+
+
+void testVixl() {
+    loge("dodola", "===============testVixl===========");
+
+    MacroAssembler masm;
+    Label demo;
+    masm.Bind(&demo);
+    GenerateDemo(&masm);
+    masm.FinalizeCode();
+    std::cout << std::endl;
+    std::cout << "Standard disassembly:" << std::endl;
+    PrintDisassembler print_disassembler(std::cout);
+    print_disassembler.DisassembleA32Buffer(masm.GetBuffer()->GetOffsetAddress<uint32_t *>(0),
+                                            masm.GetBuffer()->GetSizeInBytes());
+
+    byte *code = masm.GetBuffer()->GetStartAddress<byte *>();
+    uint32_t code_size = masm.GetSizeOfCodeGenerated();
+    ExecutableMemory memory(code, code_size);
+    uint32_t (*demo_function)(uint32_t) = memory.GetEntryPoint<uint32_t (*)(
+            uint32_t)>(demo, masm.GetInstructionSetInUse());
+    uint32_t input_value = 2;
+    uint32_t output_value = (*demo_function)(input_value);
+    loge("dodola", "native: demo(0x%08x) = 0x%08x\n", input_value, output_value);
+}
+
+
+void jni_testMethod(alias_ref<jclass>, jobject method, jint flags) {
+    //TODO备份原方法
+    JNIEnv *env = Environment::current();
+    jlong methodAddress = (jlong) env->FromReflectedMethod(method);
 
     //判断是thumb还是art
-    uint32_t hookMethodAddress = ((uint32_t) hookMethod);
+//    uint32_t hookMethodAddress = ((uint32_t) hookMethod);
+    uint32_t hookMethodAddress = gens(&method);
     int runtimeType = hookMethodAddress & 1;
     loge("dodola", "=======  %s", runtimeType == 1 ? "thumb" : "art");
     ArtMethodSpec spec = getArtMethodSpec();
-    *((size_t *) (methodAddress + spec.jniCode)) = (size_t) hookMethod;
+    *((size_t *) (methodAddress + spec.jniCode)) = (size_t) hookMethodAddress;
     loge("dodola", "***********************begin*********************");
 
     *((int *) (methodAddress + spec.accessFlags)) = kAccNative | kAccFastNative | flags;
@@ -352,39 +441,6 @@ void jni_testMethod(alias_ref<jclass>, jlong methodAddress, jint flags) {
 
 }
 
-#define __ masm->
-
-void GenerateDemo(MacroAssembler *masm) {
-    // uint32_t demo(uint32_t x)
-    // Load a constant in r1 using the literal pool.
-    __ Ldr(r1, 0x12345678);
-    __ And(r0, r0, r1);
-    __ Bx(lr);
-}
-
-void testVixl() {
-    loge("dodola", "===============testVixl===========");
-
-    MacroAssembler masm;
-    // Generate the code for the example function.
-    Label demo;
-    // Tell the macro assembler that the label "demo" refer to the current
-    // location in the buffer.
-    masm.Bind(&demo);
-    GenerateDemo(&masm);
-    // Ensure that everything is generated and that the generated buffer is
-    // ready to use.
-    masm.FinalizeCode();
-    byte *code = masm.GetBuffer()->GetStartAddress<byte *>();
-    uint32_t code_size = masm.GetSizeOfCodeGenerated();
-    ExecutableMemory memory(code, code_size);
-    // Run the example function.
-    uint32_t (*demo_function)(uint32_t) = memory.GetEntryPoint<uint32_t (*)(
-            uint32_t)>(demo, masm.GetInstructionSetInUse());
-    uint32_t input_value = 0x89abcdef;
-    uint32_t output_value = (*demo_function)(input_value);
-    loge("dodola", "native: demo(0x%08x) = 0x%08x\n", input_value, output_value);
-}
 
 jlong jni_getMethodAddress(alias_ref<jclass>, jobject method) {
     JNIEnv *env = Environment::current();
@@ -400,7 +456,6 @@ void jni_memput(alias_ref<jclass>, jbyteArray src, jlong dest) {
     jsize length = env->GetArrayLength(src);
     unsigned char *destPnt = (unsigned char *) dest;
     for (int i = 0; i < length; ++i) {
-        // LOGV("put %d with %d", i, *(srcPnt + i));
         destPnt[i] = (unsigned char) srcPnt[i];
     }
     env->ReleaseByteArrayElements(src, srcPnt, 0);
@@ -423,8 +478,12 @@ jbyteArray jni_memget(alias_ref<jclass>, jlong src, jint length) {
     return dest;
 }
 
+
 jint JNICALL JNI_OnLoad(JavaVM *vm, void *) {
     return initialize(vm, [] {
+
+        std::cout.rdbuf(new androidbuf);
+//        testVixl();
 
         loge("dodola", "===============hook JNI_OnLoad===========");
         nativeEngineClass = findClassStatic(

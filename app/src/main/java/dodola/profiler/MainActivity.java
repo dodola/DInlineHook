@@ -51,7 +51,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
         return sb.toString();
     }
 
-    public static String returnString2() {
+    public String returnString2() {
         Log.d("dsfsdf", "=================");
         return "1212121212121";
     }
