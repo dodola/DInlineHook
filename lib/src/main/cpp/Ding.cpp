@@ -238,14 +238,14 @@ extern "C" void postCall() {
 }
 
 
-extern "C" jobject JNICALL hookMethod(JNIEnv *env, jobject objOrClass, int test) {
+extern "C" jobject JNICALL hookMethod(JNIEnv *env, jobject objOrClass, RegisterContext *reg) {
     preCall();
 //    //调用原方法
 //    jlong art_method = (jlong) env->FromReflectedMethod(*method);
 //    jstring str = static_cast<jstring>(env->CallObjectMethod(objOrClass,
 //                                                             reinterpret_cast<jmethodID>(art_method)));
     jstring str = env->NewStringUTF("==========");
-    loge("dodola", "getresultsssssss %d",test);
+    loge("dodola", "getresultsssssss %d %d ", reg->general.regs.r0, env);
     return str;
 }
 
@@ -339,6 +339,29 @@ ArtMethodSpec getArtMethodSpec() {
 }
 
 
+static HookInfo *enableHook(void *art_method, jobject additional_info) {
+    JNIEnv *env = Environment::current();
+
+    jclass java_lang_reflect_Method = env->FindClass("java/lang/reflect/Method");
+    jclass java_lang_reflect_AbstractMethod = env->FindClass("java/lang/reflect/Executable");
+    jfieldID java_lang_reflect_AbstractMethod_artMethod = env->GetFieldID(
+            java_lang_reflect_AbstractMethod, "artMethod", "J");
+    //备份原来的方法
+    ArtMethodSpec spec = getArtMethodSpec();
+    void *backupMethod = malloc(spec.size);
+    memcpy(backupMethod, art_method, spec.size);
+
+    jobject reflect_method = env->AllocObject(java_lang_reflect_Method);
+    env->SetLongField(reflect_method, java_lang_reflect_AbstractMethod_artMethod,
+                      (jlong) backupMethod);
+    HookInfo *hookInfo = reinterpret_cast<HookInfo *>(calloc(1, sizeof(HookInfo)));
+    hookInfo->reflectedMethod = env->NewGlobalRef(reflect_method);
+    hookInfo->additionalInfo = env->NewGlobalRef(additional_info);
+    return hookInfo;
+
+}
+
+
 #define __ masm->
 
 void GenerateDemo(MacroAssembler *masm) {
@@ -348,34 +371,85 @@ void GenerateDemo(MacroAssembler *masm) {
 }
 
 
-void generatorJumpMethod(jobject *method, MacroAssembler *masm) {
+void generatorJumpMethod(HookInfo *hookInfo, MacroAssembler *masm) {
     loge("dodola", "hookMethod %x", (uint32_t) hookMethod);
-    //保存寄存器
-//    RegisterList registerList1(r1, r2, r3, r4);
-//    RegisterList registerList2(r5, r6, r7, r8);
-//    RegisterList registerList3(r10, r11, lr);
-//
-//    __ Push(registerList1);
-//    __ Push(registerList2);
-//    __ Push(registerList3);
-    __ Push(lr);
 
-    __ Mov(r2,100);
-    __ Mov(r3, (uint32_t) hookMethod);
-    __ Blx(r3);
-//    pop {r5-r8, r10-r11, lr}
-//    __ Pop(registerList3);
-//    __ Pop(registerList2);
-    __ Pop(lr);
+
+
+
+//    _ sub(sp, sp, Operand(14 * 4));
+//    _ str(lr, MEM(sp, 13 * 4));
+//    _ str(r12, MEM(sp, 12 * 4));
+//    _ str(r11, MEM(sp, 11 * 4));
+//    _ str(r10, MEM(sp, 10 * 4));
+//    _ str(r9, MEM(sp, 9 * 4));
+//    _ str(r8, MEM(sp, 8 * 4));
+//    _ str(r7, MEM(sp, 7 * 4));
+//    _ str(r6, MEM(sp, 6 * 4));
+//    _ str(r5, MEM(sp, 5 * 4));
+//    _ str(r4, MEM(sp, 4 * 4));
+//    _ str(r3, MEM(sp, 3 * 4));
+//    _ str(r2, MEM(sp, 2 * 4));
+//    _ str(r1, MEM(sp, 1 * 4));
+//    _ str(r0, MEM(sp, 0 * 4));
+//
+//    _ sub(sp, sp, Operand(8));
+//
+//    _ mov(r0, sp);
+//    _ mov(r1, r12);
+//    _ CallFunction(ExternalReference((void *)intercept_routing_common_bridge_handler));
+
+
+
+
+    __ Sub(sp, sp, Operand(14 * 4));
+    __ Str(lr, MemOperand(sp, 13 * 4));
+    __ Str(r12, MemOperand(sp, 12 * 4));
+    __ Str(r11, MemOperand(sp, 11 * 4));
+    __ Str(r10, MemOperand(sp, 10 * 4));
+    __ Str(r9, MemOperand(sp, 9 * 4));
+    __ Str(r8, MemOperand(sp, 8 * 4));
+    __ Str(r7, MemOperand(sp, 7 * 4));
+    __ Str(r6, MemOperand(sp, 6 * 4));
+    __ Str(r5, MemOperand(sp, 5 * 4));
+    __ Str(r4, MemOperand(sp, 4 * 4));
+    __ Str(r3, MemOperand(sp, 3 * 4));
+    __ Str(r2, MemOperand(sp, 2 * 4));
+    __ Str(r1, MemOperand(sp, 1 * 4));
+    __ Str(r0, MemOperand(sp, 0 * 4));
+    __ Sub(sp, sp, Operand(8));
+    //要保留r0 和 r1 寄存器，r0=>env r1 => class or obj
+    __ Mov(r2, sp);
+    __ Mov(r3, (uint32_t) hookInfo);
+    __ Mov(r4, (uint32_t) hookMethod);
+    __ Blx(r4);
+    //需要还原lr
+    __ Add(sp, sp, Operand(8));
+    __ Ldr(r1, MemOperand(sp, 4, PostIndex));
+    __ Ldr(r1, MemOperand(sp, 4, PostIndex));
+    __ Ldr(r1, MemOperand(sp, 4, PostIndex));
+    __ Ldr(r1, MemOperand(sp, 4, PostIndex));
+    __ Ldr(r1, MemOperand(sp, 4, PostIndex));
+    __ Ldr(r1, MemOperand(sp, 4, PostIndex));
+    __ Ldr(r1, MemOperand(sp, 4, PostIndex));
+    __ Ldr(r1, MemOperand(sp, 4, PostIndex));
+    __ Ldr(r1, MemOperand(sp, 4, PostIndex));
+    __ Ldr(r1, MemOperand(sp, 4, PostIndex));
+    __ Ldr(r1, MemOperand(sp, 4, PostIndex));
+    __ Ldr(r1, MemOperand(sp, 4, PostIndex));
+    __ Ldr(r1, MemOperand(sp, 4, PostIndex));
+    __ Ldr(lr, MemOperand(sp, 4, PostIndex));
     __ Bx(lr);
+
 }
 
-uint32_t gens(jobject *method) {
+
+uint32_t gens(HookInfo *hookInfo) {
 
     MacroAssembler masm(A32);
     Label demo;
     masm.Bind(&demo);
-    generatorJumpMethod(method, &masm);
+    generatorJumpMethod(hookInfo, &masm);
     masm.FinalizeCode();
 
     byte *code = masm.GetBuffer()->GetStartAddress<byte *>();
@@ -424,7 +498,7 @@ void jni_testMethod(alias_ref<jclass>, jobject method, jint flags) {
 
     //判断是thumb还是art
 //    uint32_t hookMethodAddress = ((uint32_t) hookMethod);
-    uint32_t hookMethodAddress = gens(&method);
+    uint32_t hookMethodAddress = gens(enableHook(reinterpret_cast<void *>(methodAddress), nullptr));
     int runtimeType = hookMethodAddress & 1;
     loge("dodola", "=======  %s", runtimeType == 1 ? "thumb" : "art");
     ArtMethodSpec spec = getArtMethodSpec();

@@ -107,4 +107,27 @@ private:
     char buffer[bufsize];
 };
 
+
+struct HookInfo {
+    jobject reflectedMethod;
+    jobject additionalInfo;
+//    void* originalMethod;
+//    mirror::ArtMethod* originalMethod;
+//    const char *shorty;
+};
+
+typedef struct _RegisterContext {
+    uint32_t dummy_0;
+    uint32_t dummy_1;
+
+    union {
+        uint32_t r[13];
+        struct {
+            uint32_t r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12;
+        } regs;
+    } general;
+
+    uint32_t lr;
+} RegisterContext;
+
 #endif //PROFILER_DING_H
