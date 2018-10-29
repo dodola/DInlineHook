@@ -145,7 +145,7 @@ size_t *jnitrampolineAddress;
 
 void (*artInterpreterToCompiledCodeBridge);
 
-void hooktest() {
+void initHook() {
     JavaVM *vm = NULL;
     Environment::current()->GetJavaVM(&vm);
     JavaVMExt *ext = reinterpret_cast<JavaVMExt *>(vm);
@@ -229,23 +229,27 @@ void hooktest() {
 }
 
 
-extern "C" void preCall() {
-    loge("preCall", "cccccccccccccc");
-}
-
-extern "C" void postCall() {
-
-}
-
-
-extern "C" jobject JNICALL hookMethod(JNIEnv *env, jobject objOrClass, RegisterContext *reg) {
-    preCall();
+extern "C" jobject JNICALL
+hookMethod(JNIEnv *env, jobject objOrClass, RegisterContext *reg, HookInfo *info) {
 //    //调用原方法
-//    jlong art_method = (jlong) env->FromReflectedMethod(*method);
-//    jstring str = static_cast<jstring>(env->CallObjectMethod(objOrClass,
+//    jmethodID art_method = env->FromReflectedMethod(info->reflectedMethod);
+    loge("dodola", "========call hook method========= ");
+//
+//    jstring strresult = static_cast<jstring>(env->CallObjectMethod(objOrClass,
 //                                                             reinterpret_cast<jmethodID>(art_method)));
+//    jstring originStr = static_cast<jstring>(env->CallObjectMethod(objOrClass, art_method));
+//
+//    loge("dodola", "========call hook method=========%d %s", art_method, originStr);
+
+
+    jclass innerHooker = env->FindClass("profiler/dodola/lib/InnerHooker");
+    jmethodID callOrignMethod = env->GetStaticMethodID(innerHooker, "callOrigin",
+                                                       "(Ljava/lang/reflect/Member;Ljava/lang/Object;)V");
+    env->CallStaticVoidMethod(innerHooker, callOrignMethod, nullptr, (jobject*)reg->general.regs.r2);
+
+//    const char *originChars = env->GetStringUTFChars(originStr, 0);
     jstring str = env->NewStringUTF("==========");
-    loge("dodola", "getresultsssssss %d %d ", reg->general.regs.r0, env);
+//    loge("dodola", "getresultsssssss %d %d %s", reg->general.regs.r0, env, originChars);
     return str;
 }
 
@@ -350,6 +354,7 @@ static HookInfo *enableHook(void *art_method, jobject additional_info) {
     ArtMethodSpec spec = getArtMethodSpec();
     void *backupMethod = malloc(spec.size);
     memcpy(backupMethod, art_method, spec.size);
+    loge("dodola", "backupMethod %d", backupMethod);
 
     jobject reflect_method = env->AllocObject(java_lang_reflect_Method);
     env->SetLongField(reflect_method, java_lang_reflect_AbstractMethod_artMethod,
@@ -375,33 +380,6 @@ void generatorJumpMethod(HookInfo *hookInfo, MacroAssembler *masm) {
     loge("dodola", "hookMethod %x", (uint32_t) hookMethod);
 
 
-
-
-//    _ sub(sp, sp, Operand(14 * 4));
-//    _ str(lr, MEM(sp, 13 * 4));
-//    _ str(r12, MEM(sp, 12 * 4));
-//    _ str(r11, MEM(sp, 11 * 4));
-//    _ str(r10, MEM(sp, 10 * 4));
-//    _ str(r9, MEM(sp, 9 * 4));
-//    _ str(r8, MEM(sp, 8 * 4));
-//    _ str(r7, MEM(sp, 7 * 4));
-//    _ str(r6, MEM(sp, 6 * 4));
-//    _ str(r5, MEM(sp, 5 * 4));
-//    _ str(r4, MEM(sp, 4 * 4));
-//    _ str(r3, MEM(sp, 3 * 4));
-//    _ str(r2, MEM(sp, 2 * 4));
-//    _ str(r1, MEM(sp, 1 * 4));
-//    _ str(r0, MEM(sp, 0 * 4));
-//
-//    _ sub(sp, sp, Operand(8));
-//
-//    _ mov(r0, sp);
-//    _ mov(r1, r12);
-//    _ CallFunction(ExternalReference((void *)intercept_routing_common_bridge_handler));
-
-
-
-
     __ Sub(sp, sp, Operand(14 * 4));
     __ Str(lr, MemOperand(sp, 13 * 4));
     __ Str(r12, MemOperand(sp, 12 * 4));
@@ -418,7 +396,7 @@ void generatorJumpMethod(HookInfo *hookInfo, MacroAssembler *masm) {
     __ Str(r1, MemOperand(sp, 1 * 4));
     __ Str(r0, MemOperand(sp, 0 * 4));
     __ Sub(sp, sp, Operand(8));
-    //要保留r0 和 r1 寄存器，r0=>env r1 => class or obj
+    //要保留r0 和 r1 寄存器，r0=>env r1 => class or obj r2=>RegisterContext r3 hook info
     __ Mov(r2, sp);
     __ Mov(r3, (uint32_t) hookInfo);
     __ Mov(r4, (uint32_t) hookMethod);
@@ -460,9 +438,7 @@ uint32_t gens(HookInfo *hookInfo) {
                                                                                ...)>
             (demo, masm.GetInstructionSetInUse());
     return reinterpret_cast<uint32_t>(demo_function);
-//    uint32_t input_value = 0x1111;
-//    uint32_t output_value = (*demo_function)(input_value);
-//    loge("dodola", "native: demo(%d) = %d\n", input_value, output_value);
+
 }
 
 
@@ -492,7 +468,6 @@ void testVixl() {
 
 
 void jni_testMethod(alias_ref<jclass>, jobject method, jint flags) {
-    //TODO备份原方法
     JNIEnv *env = Environment::current();
     jlong methodAddress = (jlong) env->FromReflectedMethod(method);
 
@@ -557,7 +532,6 @@ jint JNICALL JNI_OnLoad(JavaVM *vm, void *) {
     return initialize(vm, [] {
 
         std::cout.rdbuf(new androidbuf);
-//        testVixl();
 
         loge("dodola", "===============hook JNI_OnLoad===========");
         nativeEngineClass = findClassStatic(
@@ -569,8 +543,7 @@ jint JNICALL JNI_OnLoad(JavaVM *vm, void *) {
                                                    makeNativeMethod("getMethodAddress",
                                                                     jni_getMethodAddress)
                                            });
-        hooktest();
-//        testVixl();
+        initHook();
     });
 }
 

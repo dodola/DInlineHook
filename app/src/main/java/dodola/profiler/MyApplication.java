@@ -2,7 +2,9 @@ package dodola.profiler;
 
 import android.app.Application;
 import android.content.Context;
-import android.os.Debug;
+import android.view.View;
+
+import java.lang.reflect.Method;
 
 import profiler.dodola.lib.ArtMethod;
 import profiler.dodola.lib.InnerHooker;
@@ -24,8 +26,9 @@ public class MyApplication extends Application {
         try {
 //            ArtMethod artOrigin =
 //                    ArtMethod.of(MainActivity.class.getDeclaredMethod("onCreate", Bundle.class));
-            ArtMethod artOrigin2 = ArtMethod.of(MainActivity.class.getDeclaredMethod("returnString2"));
-            InnerHooker.testMethod(MainActivity.class.getDeclaredMethod("returnString2"), artOrigin2.getAccessFlags());
+            Method onClick = MainActivity.class.getDeclaredMethod("onClick", View.class);
+            ArtMethod artOrigin2 = ArtMethod.of(onClick);
+            InnerHooker.testMethod(onClick, artOrigin2.getAccessFlags());
 
 //            artOrigin.ensureResolved();
 //            artOrigin.compile();

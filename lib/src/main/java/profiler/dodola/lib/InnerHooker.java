@@ -1,5 +1,9 @@
 package profiler.dodola.lib;
 
+import android.util.Log;
+import android.view.View;
+import android.widget.Toast;
+
 import java.lang.reflect.Member;
 
 /**
@@ -28,5 +32,17 @@ public class InnerHooker {
     public static byte[] get(long src, int length) {
         byte[] bytes = memget(src, length);
         return bytes;
+    }
+
+
+    public static void callOrigin(Member method, Object ori) {
+        Log.e("ttttt", "---------------------------" + ori.getClass() + ",");
+        View v = ((View) ori);
+        Toast.makeText(v.getContext(), "什么鬼 ing", Toast.LENGTH_SHORT).show();
+//        try {
+//            ((Method) method).invoke(ori);
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//        }
     }
 }

@@ -32,7 +32,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
         final TextView tv = findViewById(R.id.sample_text);
 
 //        tv.setText(returnString("ccccx", "vvvvvvc"));
-        tv.setText(returnString2());
+        tv.setText(returnString2(2));
         iv = findViewById(R.id.imageView);
         //        btn.setText(stringFromJNI());
 
@@ -51,9 +51,9 @@ public class MainActivity extends Activity implements View.OnClickListener {
         return sb.toString();
     }
 
-    public String returnString2() {
-        Log.d("dsfsdf", "=================");
-        return "1212121212121";
+    public String returnString2(int a) {
+        Log.d("dsfsdf", "=================" + a);
+        return "1212121212121" + a;
     }
 
     /**
