@@ -33,12 +33,77 @@ typedef void *gpointer;
 typedef guint64 GumAddress;
 
 
-int kAccPublic = 0x0001;
-int kAccStatic = 0x0008;
-int kAccFinal = 0x0010;
-int kAccNative = 0x0100;
-int kAccFastNative = 0x00080000;
+//int kAccPublic = 0x0001;
+//int kAccStatic = 0x0008;
+//int kAccFinal = 0x0010;
+//int kAccNative = 0x0100;
+//int kAccFastNative = 0x00080000;
 
+static constexpr uint32_t kAccPublic = 0x0001;  // class, field, method, ic
+static constexpr uint32_t kAccPrivate = 0x0002;  // field, method, ic
+static constexpr uint32_t kAccProtected = 0x0004;  // field, method, ic
+static constexpr uint32_t kAccStatic = 0x0008;  // field, method, ic
+static constexpr uint32_t kAccFinal = 0x0010;  // class, field, method, ic
+static constexpr uint32_t kAccSynchronized = 0x0020;  // method (only allowed on natives)
+static constexpr uint32_t kAccSuper = 0x0020;  // class (not used in dex)
+static constexpr uint32_t kAccVolatile = 0x0040;  // field
+static constexpr uint32_t kAccBridge = 0x0040;  // method (1.5)
+static constexpr uint32_t kAccTransient = 0x0080;  // field
+static constexpr uint32_t kAccVarargs = 0x0080;  // method (1.5)
+static constexpr uint32_t kAccNative = 0x0100;  // method
+static constexpr uint32_t kAccInterface = 0x0200;  // class, ic
+static constexpr uint32_t kAccAbstract = 0x0400;  // class, method, ic
+static constexpr uint32_t kAccStrict = 0x0800;  // method
+static constexpr uint32_t kAccSynthetic = 0x1000;  // class, field, method, ic
+static constexpr uint32_t kAccAnnotation = 0x2000;  // class, ic (1.5)
+static constexpr uint32_t kAccEnum = 0x4000;  // class, field, ic (1.5)
+static constexpr uint32_t kAccJavaFlagsMask = 0xffff;  // bits set from Java sources (low 16)
+static constexpr uint32_t kAccConstructor = 0x00010000;  // method (dex only) <(cl)init>
+static constexpr uint32_t kAccDeclaredSynchronized = 0x00020000;  // method (dex only)
+static constexpr uint32_t kAccClassIsProxy = 0x00040000;  // class  (dex only)
+static constexpr uint32_t kAccPreverified = 0x00080000;  // class (runtime),
+// method (dex only)
+static constexpr uint32_t kAccFastNative = 0x00080000;  // method (dex only)
+static constexpr uint32_t kAccPortableCompiled = 0x00100000;  // method (dex only)
+static constexpr uint32_t kAccMiranda = 0x00200000;  // method (dex only)
+// Special runtime-only flags.
+// Note: if only kAccClassIsReference is set, we have a soft reference.
+// class/ancestor overrides finalize()
+static constexpr uint32_t kAccClassIsFinalizable = 0x80000000;
+// class is a soft/weak/phantom ref
+static constexpr uint32_t kAccClassIsReference = 0x08000000;
+// class is a weak reference
+static constexpr uint32_t kAccClassIsWeakReference = 0x04000000;
+// class is a finalizer reference
+static constexpr uint32_t kAccClassIsFinalizerReference = 0x02000000;
+// class is a phantom reference
+static constexpr uint32_t kAccClassIsPhantomReference = 0x01000000;
+static constexpr uint32_t kAccReferenceFlagsMask = (kAccClassIsReference
+                                                    | kAccClassIsWeakReference
+                                                    | kAccClassIsFinalizerReference
+                                                    | kAccClassIsPhantomReference);
+// Valid (meaningful) bits for a field.
+static constexpr uint32_t kAccValidFieldFlags = kAccPublic | kAccPrivate | kAccProtected |
+                                                kAccStatic | kAccFinal | kAccVolatile |
+                                                kAccTransient | kAccSynthetic | kAccEnum;
+// Valid (meaningful) bits for a method.
+static constexpr uint32_t kAccValidMethodFlags = kAccPublic | kAccPrivate | kAccProtected |
+                                                 kAccStatic | kAccFinal | kAccSynchronized |
+                                                 kAccBridge | kAccVarargs | kAccNative |
+                                                 kAccAbstract | kAccStrict | kAccSynthetic |
+                                                 kAccMiranda | kAccConstructor |
+                                                 kAccDeclaredSynchronized;
+// Valid (meaningful) bits for a class (not interface).
+// Note 1. These are positive bits. Other bits may have to be zero.
+// Note 2. Inner classes can expose more access flags to Java programs. That is handled by libcore.
+static constexpr uint32_t kAccValidClassFlags = kAccPublic | kAccFinal | kAccSuper |
+                                                kAccAbstract | kAccSynthetic | kAccEnum;
+// Valid (meaningful) bits for an interface.
+// Note 1. Annotations are interfaces.
+// Note 2. These are positive bits. Other bits may have to be zero.
+// Note 3. Inner classes can expose more access flags to Java programs. That is handled by libcore.
+static constexpr uint32_t kAccValidInterfaceFlags = kAccPublic | kAccInterface |
+                                                    kAccAbstract | kAccSynthetic | kAccAnnotation;
 
 alias_ref<jclass> nativeEngineClass;
 
@@ -231,21 +296,14 @@ void initHook() {
 
 extern "C" jobject JNICALL
 hookMethod(JNIEnv *env, jobject objOrClass, RegisterContext *reg, HookInfo *info) {
-//    //调用原方法
-//    jmethodID art_method = env->FromReflectedMethod(info->reflectedMethod);
-    loge("dodola", "========call hook method========= ");
-//
-//    jstring strresult = static_cast<jstring>(env->CallObjectMethod(objOrClass,
-//                                                             reinterpret_cast<jmethodID>(art_method)));
-//    jstring originStr = static_cast<jstring>(env->CallObjectMethod(objOrClass, art_method));
 //
 //    loge("dodola", "========call hook method=========%d %s", art_method, originStr);
 
 
     jclass innerHooker = env->FindClass("profiler/dodola/lib/InnerHooker");
     jmethodID callOrignMethod = env->GetStaticMethodID(innerHooker, "callOrigin",
-                                                       "(Ljava/lang/reflect/Member;Ljava/lang/Object;)V");
-    env->CallStaticVoidMethod(innerHooker, callOrignMethod, nullptr, (jobject*)reg->general.regs.r2);
+                                                       "(Lprofiler/dodola/lib/ArtMethod;Ljava/lang/Object;)V");
+    env->CallStaticVoidMethod(innerHooker, callOrignMethod, info->reflectedMethod, objOrClass);
 
 //    const char *originChars = env->GetStringUTFChars(originStr, 0);
     jstring str = env->NewStringUTF("==========");
@@ -256,7 +314,6 @@ hookMethod(JNIEnv *env, jobject objOrClass, RegisterContext *reg, HookInfo *info
 
 ArtMethodSpec getArtMethodSpec() {
     JNIEnv *env = Environment::current();
-
     jclass process = env->FindClass("android/os/Process");
     jmethodID setArgV0 = env->GetStaticMethodID(process, "setArgV0", "(Ljava/lang/String;)V");
     GumRuntimeBounds runtime_bounds;
@@ -281,7 +338,7 @@ ArtMethodSpec getArtMethodSpec() {
     char perms[5] = {0,};
 
     maps = fopen("/proc/self/maps", "r");
-    char *libpath = "/system/lib/libandroid_runtime.so";
+    char *libpath = const_cast<char *>("/system/lib/libandroid_runtime.so");
 
     while (!found && fgets(buff, sizeof(buff), maps)) {
 
@@ -343,24 +400,29 @@ ArtMethodSpec getArtMethodSpec() {
 }
 
 
-static HookInfo *enableHook(void *art_method, jobject additional_info) {
+static HookInfo *enableHook(void *art_method, jobject additional_info, jobject backup) {
     JNIEnv *env = Environment::current();
 
-    jclass java_lang_reflect_Method = env->FindClass("java/lang/reflect/Method");
-    jclass java_lang_reflect_AbstractMethod = env->FindClass("java/lang/reflect/Executable");
-    jfieldID java_lang_reflect_AbstractMethod_artMethod = env->GetFieldID(
-            java_lang_reflect_AbstractMethod, "artMethod", "J");
-    //备份原来的方法
-    ArtMethodSpec spec = getArtMethodSpec();
-    void *backupMethod = malloc(spec.size);
-    memcpy(backupMethod, art_method, spec.size);
-    loge("dodola", "backupMethod %d", backupMethod);
+//    jclass java_lang_reflect_Method = env->FindClass("java/lang/reflect/Method");
+//    jclass java_lang_reflect_AbstractMethod = env->FindClass("java/lang/reflect/Executable");
+//    jfieldID java_lang_reflect_AbstractMethod_artMethod = env->GetFieldID(
+//            java_lang_reflect_AbstractMethod, "artMethod", "J");
+//    //备份原来的方法
+//    ArtMethodSpec spec = getArtMethodSpec();
+//    void *backupMethod = malloc(spec.size);
+//    memcpy(backupMethod, art_method, spec.size);
+//    loge("dodola", "backupMethod %d", backupMethod);
+//
+//    *((int *) ((long) backupMethod + spec.accessFlags)) = kAccPrivate;
+//
+//
+////    jobject reflect_method = env->AllocObject(java_lang_reflect_Method);
+//    env->SetLongField(backup, java_lang_reflect_AbstractMethod_artMethod,
+//                      reinterpret_cast<jlong>(backupMethod));
 
-    jobject reflect_method = env->AllocObject(java_lang_reflect_Method);
-    env->SetLongField(reflect_method, java_lang_reflect_AbstractMethod_artMethod,
-                      (jlong) backupMethod);
+    //设置
     HookInfo *hookInfo = reinterpret_cast<HookInfo *>(calloc(1, sizeof(HookInfo)));
-    hookInfo->reflectedMethod = env->NewGlobalRef(reflect_method);
+    hookInfo->reflectedMethod = env->NewGlobalRef(backup);
     hookInfo->additionalInfo = env->NewGlobalRef(additional_info);
     return hookInfo;
 
@@ -467,13 +529,13 @@ void testVixl() {
 }
 
 
-void jni_testMethod(alias_ref<jclass>, jobject method, jint flags) {
+void jni_testMethod(alias_ref<jclass>, jobject method, jint flags, jobject backup) {
     JNIEnv *env = Environment::current();
     jlong methodAddress = (jlong) env->FromReflectedMethod(method);
 
     //判断是thumb还是art
-//    uint32_t hookMethodAddress = ((uint32_t) hookMethod);
-    uint32_t hookMethodAddress = gens(enableHook(reinterpret_cast<void *>(methodAddress), nullptr));
+    uint32_t hookMethodAddress = gens(
+            enableHook(reinterpret_cast<void *>(methodAddress), nullptr, backup));
     int runtimeType = hookMethodAddress & 1;
     loge("dodola", "=======  %s", runtimeType == 1 ? "thumb" : "art");
     ArtMethodSpec spec = getArtMethodSpec();
@@ -528,6 +590,23 @@ jbyteArray jni_memget(alias_ref<jclass>, jlong src, jint length) {
 }
 
 
+jlong jni_mmap(alias_ref<jclass>, jint length) {
+    void *space = mmap(0, (size_t) length, PROT_READ | PROT_WRITE | PROT_EXEC,
+                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (space == MAP_FAILED) {
+        return 0;
+    }
+    return (jlong) space;
+}
+
+jboolean jni_munmap(alias_ref<jclass>, jlong addr, jint length) {
+    int r = munmap((void *) addr, (size_t) length);
+    if (r == -1) {
+        return JNI_FALSE;
+    }
+    return JNI_TRUE;
+}
+
 jint JNICALL JNI_OnLoad(JavaVM *vm, void *) {
     return initialize(vm, [] {
 
@@ -540,6 +619,8 @@ jint JNICALL JNI_OnLoad(JavaVM *vm, void *) {
                                                    makeNativeMethod("testMethod", jni_testMethod),
                                                    makeNativeMethod("memput", jni_memput),
                                                    makeNativeMethod("memget", jni_memget),
+                                                   makeNativeMethod("mmap", jni_mmap),
+                                                   makeNativeMethod("munmap", jni_munmap),
                                                    makeNativeMethod("getMethodAddress",
                                                                     jni_getMethodAddress)
                                            });

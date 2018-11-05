@@ -16,6 +16,11 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+
+import profiler.dodola.lib.ArtMethod;
+import profiler.dodola.lib.InnerHooker;
 
 public class MainActivity extends Activity implements View.OnClickListener {
 
@@ -31,8 +36,46 @@ public class MainActivity extends Activity implements View.OnClickListener {
         Button btn = findViewById(R.id.button);
         final TextView tv = findViewById(R.id.sample_text);
 
+
+        try {
+            Method onClick = MainActivity.class.getDeclaredMethod("returnString2");
+            ArtMethod artOrigin2 = ArtMethod.of(onClick);
+            ArtMethod backup = artOrigin2.backup();
+            InnerHooker.testMethod(onClick, artOrigin2.getAccessFlags(),backup);
+            backup.invokeInternal(this,null);
+//            artOrigin.ensureResolved();
+//            artOrigin.compile();
+//            long entryPointFromQuickCompiledCode = artOrigin.getEntryPointFromQuickCompiledCode();
+//            Profiler.testMethod2(entryPointFromQuickCompiledCode);
+//            entryPointFromQuickCompiledCode = artOrigin.getEntryPointFromQuickCompiledCode();
+        } catch (NoSuchMethodException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        } catch (InstantiationException e) {
+            e.printStackTrace();
+        } catch (InvocationTargetException e) {
+            e.printStackTrace();
+        }
+
+
 //        tv.setText(returnString("ccccx", "vvvvvvc"));
-        tv.setText(returnString2(2));
+//        tv.setText(returnString2());
+//        Method onClick = null;
+//        try {
+//            onClick = MainActivity.class.getDeclaredMethod("returnString2");
+//            ArtMethod artOrigin2 = ArtMethod.of(onClick);
+//            ArtMethod backup = artOrigin2.backup();
+//            String val = (String) ((Method) backup.getExecutable()).invoke(this);
+//            tv.setText(val);
+//        } catch (NoSuchMethodException e) {
+//            e.printStackTrace();
+//        } catch (IllegalAccessException e) {
+//            e.printStackTrace();
+//        } catch (InvocationTargetException e) {
+//            e.printStackTrace();
+//        }
+
         iv = findViewById(R.id.imageView);
         //        btn.setText(stringFromJNI());
 
@@ -51,9 +94,9 @@ public class MainActivity extends Activity implements View.OnClickListener {
         return sb.toString();
     }
 
-    public String returnString2(int a) {
-        Log.d("dsfsdf", "=================" + a);
-        return "1212121212121" + a;
+    public String returnString2() {
+        Log.d("dsfsdf", "=================");
+        return "1212121212121";
     }
 
     /**

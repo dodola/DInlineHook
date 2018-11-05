@@ -1,6 +1,12 @@
 package profiler.dodola.lib;
 
+import android.os.Build;
+import android.util.Log;
+
+import java.lang.reflect.AccessibleObject;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 
@@ -246,4 +252,103 @@ public class ArtMethod {
     }
 
 
+    public ArtMethod backup() {
+        try {
+            // Before Oreo, it is: java.lang.reflect.AbstractMethod
+            // After Oreo, it is: java.lang.reflect.Executable
+            Class<?> abstractMethodClass = Method.class.getSuperclass();
+
+            Object executable = this.getExecutable();
+            ArtMethod artMethod;
+            if (Build.VERSION.SDK_INT < 23) {
+                Class<?> artMethodClass = Class.forName("java.lang.reflect.ArtMethod");
+                //Get the original artMethod field
+                Field artMethodField = abstractMethodClass.getDeclaredField("artMethod");
+                if (!artMethodField.isAccessible()) {
+                    artMethodField.setAccessible(true);
+                }
+                Object srcArtMethod = artMethodField.get(executable);
+
+                Constructor<?> constructor = artMethodClass.getDeclaredConstructor();
+                constructor.setAccessible(true);
+                Object destArtMethod = constructor.newInstance();
+
+                //Fill the fields to the new method we created
+                for (Field field : artMethodClass.getDeclaredFields()) {
+                    if (!field.isAccessible()) {
+                        field.setAccessible(true);
+                    }
+                    field.set(destArtMethod, field.get(srcArtMethod));
+                }
+                Method newMethod = Method.class.getConstructor(artMethodClass).newInstance(destArtMethod);
+                newMethod.setAccessible(true);
+                artMethod = ArtMethod.of(newMethod);
+
+                artMethod.setEntryPointFromQuickCompiledCode(getEntryPointFromQuickCompiledCode());
+                artMethod.setEntryPointFromJni(getEntryPointFromJni());
+            } else {
+                Constructor<Method> constructor = Method.class.getDeclaredConstructor();
+                // we can't use constructor.setAccessible(true); because Google does not like it
+                // AccessibleObject.setAccessible(new AccessibleObject[]{constructor}, true);
+                Field override = AccessibleObject.class.getDeclaredField(
+                        Build.VERSION.SDK_INT == Build.VERSION_CODES.M ? "flag" : "override");
+                override.setAccessible(true);
+                override.set(constructor, true);
+
+                Method m = constructor.newInstance();
+                m.setAccessible(true);
+                for (Field field : abstractMethodClass.getDeclaredFields()) {
+                    field.setAccessible(true);
+                    field.set(m, field.get(executable));
+                }
+                Field artMethodField = abstractMethodClass.getDeclaredField("artMethod");
+                artMethodField.setAccessible(true);
+                int artMethodSize = getArtMethodSize();
+                long memoryAddress = InnerHooker.map(artMethodSize);
+
+                byte[] data = InnerHooker.get(address, artMethodSize);
+                InnerHooker.put(data, memoryAddress);
+                artMethodField.set(m, memoryAddress);
+                artMethod = ArtMethod.of(m);
+            }
+            artMethod.makePrivate();
+            artMethod.setAccessible(true);
+            artMethod.origin = this; // save origin method.
+            return artMethod;
+
+
+        } catch (Throwable e) {
+            Log.e(TAG, "backup method error:", e);
+            throw new IllegalStateException("Cannot create backup method from :: " + getExecutable(), e);
+        }
+    }
+
+    public static int getArtMethodSize() throws NoSuchMethodException {
+        if (artMethodSize > 0) {
+            return artMethodSize;
+        }
+        final Method rule1 = ArtMethod.class.getDeclaredMethod("rule1");
+        final Method rule2 = ArtMethod.class.getDeclaredMethod("rule2");
+        final long rule2Address = InnerHooker.getMethodAddress(rule2);
+        final long rule1Address = InnerHooker.getMethodAddress(rule1);
+        final long size = Math.abs(rule2Address - rule1Address);
+        artMethodSize = (int) size;
+        return artMethodSize;
+    }
+
+    public Object invokeInternal(Object receiver, Object... args) throws IllegalAccessException, InvocationTargetException, InstantiationException {
+        if (constructor != null) {
+            return constructor.newInstance(args);
+        } else {
+            return method.invoke(receiver, args);
+        }
+    }
+
+    private void rule1() {
+        Log.i(TAG, "do not inline me!!");
+    }
+
+    private void rule2() {
+        Log.i(TAG, "do not inline me!!");
+    }
 }

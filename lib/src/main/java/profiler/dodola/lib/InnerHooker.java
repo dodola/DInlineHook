@@ -1,10 +1,8 @@
 package profiler.dodola.lib;
 
 import android.util.Log;
-import android.view.View;
-import android.widget.Toast;
 
-import java.lang.reflect.Member;
+import java.lang.reflect.Method;
 
 /**
  * Created by dodola on 2018/10/22.
@@ -23,7 +21,12 @@ public class InnerHooker {
 
     public static native long getMethodAddress(Object method);
 
-    public static native void testMethod(Object method, int flags);
+    public static native void testMethod(Object method, int flags, Object backup);
+
+
+    public static native long mmap(int length);
+
+    public static native boolean munmap(long address, int length);
 
     public static void put(byte[] bytes, long dest) {
         memput(bytes, dest);
@@ -35,14 +38,24 @@ public class InnerHooker {
     }
 
 
-    public static void callOrigin(Member method, Object ori) {
-        Log.e("ttttt", "---------------------------" + ori.getClass() + ",");
-        View v = ((View) ori);
-        Toast.makeText(v.getContext(), "什么鬼 ing", Toast.LENGTH_SHORT).show();
-//        try {
-//            ((Method) method).invoke(ori);
-//        } catch (Exception e) {
-//            e.printStackTrace();
-//        }
+    public static long map(int length) {
+        long m = mmap(length);
+        return m;
+    }
+
+    public static boolean unmap(long address, int length) {
+        return munmap(address, length);
+    }
+
+    public static void callOrigin(ArtMethod method, Object ori) {
+        Log.e("ttttt", "---------------------------" + ori + "," + method + ",");
+//        View v = ((View) ori);
+//        Toast.makeText(v.getContext(), "什么鬼 ing", Toast.LENGTH_SHORT).show();
+        try {
+            Object o = method.invokeInternal(ori, null);
+            Log.e("ttttt", "getrrrrresult=====" + o);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 }
