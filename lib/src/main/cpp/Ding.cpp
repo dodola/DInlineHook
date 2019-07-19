@@ -30,7 +30,9 @@ typedef signed long gint64;
 typedef unsigned long guint64;
 typedef unsigned int gsize;
 typedef void *gpointer;
-typedef guint64 GumAddress;
+typedef guint64 Address;
+
+#define apiLevel 21
 
 
 //int kAccPublic = 0x0001;
@@ -108,19 +110,19 @@ static constexpr uint32_t kAccValidInterfaceFlags = kAccPublic | kAccInterface |
 alias_ref<jclass> nativeEngineClass;
 
 
-struct _GumMemoryRange {
-    GumAddress base_address;
+struct _MemoryRange {
+    Address base_address;
     gsize size;
 };
-typedef struct _GumMemoryRange GumMemoryRange;
+typedef struct _MemoryRange MemoryRange;
 
 
-struct _GumRuntimeBounds {
+struct _RuntimeBounds {
     gpointer start;
     gpointer end;
 };
 
-typedef struct _GumRuntimeBounds GumRuntimeBounds;
+typedef struct _RuntimeBounds RuntimeBounds;
 
 
 struct JavaVMExt : public JavaVM {
@@ -152,63 +154,14 @@ struct RuntimeOffset {
 struct ClassLinkerOffset {
     size_t quick_resolution_trampoline_;
     size_t quick_generic_jni_trampoline_;
-    size_t quick_to_interpreter_bridge_trampoline_;
+//    size_t quick_to_interpreter_bridge_trampoline_;
 };
 
-/*
- * On Android 5.x:
- *
- * class ClassLinker {
- * ...
- * InternTable* intern_table_;                          <-- We find this then calculate our way forwards
- * const void* portable_resolution_trampoline_;
- * const void* quick_resolution_trampoline_;
- * const void* portable_imt_conflict_trampoline_;
- * const void* quick_imt_conflict_trampoline_;
- * const void* quick_generic_jni_trampoline_;           <-- ...to this
- * const void* quick_to_interpreter_bridge_trampoline_;
- * ...
- * }
- *
- * On Android 6.x and above:
- *
- * class ClassLinker {
- * ...
- * InternTable* intern_table_;                          <-- We find this then calculate our way forwards
- * const void* quick_resolution_trampoline_;
- * const void* quick_imt_conflict_trampoline_;
- * const void* quick_generic_jni_trampoline_;           <-- ...to this
- * const void* quick_to_interpreter_bridge_trampoline_;
- * ...
- * }
- */
 
-/*
- * class Runtime {
- * ...
- * gc::Heap* heap_;                <-- we need to find this
- * std::unique_ptr<ArenaPool> jit_arena_pool_;     <----- API level >= 24
- * std::unique_ptr<ArenaPool> arena_pool_;             __
- * std::unique_ptr<ArenaPool> low_4gb_arena_pool_; <--|__ API level >= 23
- * std::unique_ptr<LinearAlloc> linear_alloc_;         \_
- * size_t max_spins_before_thin_lock_inflation_;
- * MonitorList* monitor_list_;
- * MonitorPool* monitor_pool_;
- * ThreadList* thread_list_;        <--- and these
- * InternTable* intern_table_;      <--/
- * ClassLinker* class_linker_;      <-/
- * SignalCatcher* signal_catcher_;
- * std::string stack_trace_file_;
- * JavaVMExt* java_vm_;             <-- so we find this then calculate our way backwards
- * ...
- * }
- */
-
-
-
+//
 size_t *jnitrampolineAddress;
-
 void (*artInterpreterToCompiledCodeBridge);
+
 
 void initHook() {
     JavaVM *vm = NULL;
@@ -219,28 +172,31 @@ void initHook() {
     char *runtimeAddress = (char *) ext->getRuntime();
     size_t pointerSize = sizeof(void *);
     RuntimeOffset runtimeOffset;
-
     {
-
         //runtime first
         loge("dodola", "runtimeAddress:%p", ext->getRuntime());
         size_t startOffset = (pointerSize == 4) ? 200 : 384;
         size_t endOffset = startOffset + (100 * pointerSize);
-        int STD_STRING_SIZE = (pointerSize == 4) ? 12 : 24;
+        int STD_STRING_SIZE = 3 * pointerSize;
 
 
         for (size_t offset = startOffset; offset != endOffset; offset += pointerSize) {
             size_t *value = (size_t *) (runtimeAddress + offset);
             if (*value == (size_t) vm) {
                 size_t classLinkerOffset = offset - STD_STRING_SIZE - (2 * pointerSize);
+                if (apiLevel >= 27) {
+                    classLinkerOffset -= pointerSize;
+                }
                 size_t internTableOffset = classLinkerOffset - pointerSize;
                 size_t threadListOffset = internTableOffset - pointerSize;
 
                 size_t heapOffset = threadListOffset - (4 * pointerSize);
-                heapOffset -= 3 * pointerSize;
-//            if (apiLevel >= 24) {
-//                heapOffset -= pointerSize;
-//            }
+                if(apiLevel>=23) {
+                    heapOffset -= 3 * pointerSize;
+                }
+                if (apiLevel >= 24) {
+                    heapOffset -= pointerSize;
+                }
                 runtimeOffset.classLinker = classLinkerOffset;
                 runtimeOffset.heapOffset = heapOffset;
                 runtimeOffset.internTable = internTableOffset;
@@ -248,8 +204,6 @@ void initHook() {
                 loge("dododola", "classLinker:%zu  heapOffset:%zu internTable:%zu threadList:%zu",
                      classLinkerOffset,
                      heapOffset, internTableOffset, threadListOffset);
-
-
                 break;
             }
         }
@@ -271,10 +225,11 @@ void initHook() {
             size_t *value = (size_t *) (*classLinkerAddress + offset);
 
             if (*value == *internTableAddress) {
+                int delta = apiLevel >= 23 ? 3 : 5;
                 classLinkerOffset.quick_resolution_trampoline_ = offset + (pointerSize);
-                classLinkerOffset.quick_generic_jni_trampoline_ = offset + (3 * pointerSize);
-                classLinkerOffset.quick_to_interpreter_bridge_trampoline_ =
-                        offset + (4 * pointerSize);
+                classLinkerOffset.quick_generic_jni_trampoline_ = offset + (delta * pointerSize);
+//                classLinkerOffset.quick_to_interpreter_bridge_trampoline_ =
+//                        offset + (4 * pointerSize);
                 break;
             }
         }
@@ -296,7 +251,6 @@ void initHook() {
 
 extern "C" jobject JNICALL
 hookMethod(JNIEnv *env, jobject objOrClass, RegisterContext *reg, HookInfo *info) {
-//
 //    loge("dodola", "========call hook method=========%d %s", art_method, originStr);
 
 
@@ -316,7 +270,7 @@ ArtMethodSpec getArtMethodSpec() {
     JNIEnv *env = Environment::current();
     jclass process = env->FindClass("android/os/Process");
     jmethodID setArgV0 = env->GetStaticMethodID(process, "setArgV0", "(Ljava/lang/String;)V");
-    GumRuntimeBounds runtime_bounds;
+    RuntimeBounds runtime_bounds;
     uint offset;
     size_t jniCodeOffset = NULL;
     size_t accessFlagsOffset = NULL;
@@ -327,13 +281,13 @@ ArtMethodSpec getArtMethodSpec() {
     runtime_bounds.end = NULL;
 
 
-    GumMemoryRange range;
+    MemoryRange range;
 
     FILE *maps;
 
     int k, fd = -1, found = 0;
     char buff[256];
-    GumAddress end;
+    Address end;
     char path[256];
     char perms[5] = {0,};
 
@@ -344,18 +298,18 @@ ArtMethodSpec getArtMethodSpec() {
 
         if (strstr(buff, "r-xp") && strstr(buff, libpath)) {
             loge("TAG", "============found %s", buff);
-            int n = sscanf(buff,
-                           "%"
-                           G_GINT64_MODIFIER
-                           "x-%"
-                           G_GINT64_MODIFIER
-                           "x "
-                           "%4c "
-                           "%*x %*s %*d "
-                           "%s",
-                           &range.base_address, &end,
-                           perms,
-                           path);
+            sscanf(buff,
+                   "%"
+                   G_GINT64_MODIFIER
+                   "x-%"
+                   G_GINT64_MODIFIER
+                   "x "
+                   "%4c "
+                   "%*x %*s %*d "
+                   "%s",
+                   &range.base_address, &end,
+                   perms,
+                   path);
             range.size = end - range.base_address;
             runtime_bounds.start = GSIZE_TO_POINTER (range.base_address);
             runtime_bounds.end = GSIZE_TO_POINTER (range.base_address + range.size);
